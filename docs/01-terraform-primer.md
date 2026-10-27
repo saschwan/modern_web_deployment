@@ -171,6 +171,11 @@ the role's trust policy (sub must match)
                   <--(4) credentials valid for 1 hour
 ```
 
+Newer repositories use **immutable subjects** with numeric IDs instead
+(`repo:saschwan@5630718/modern_web_deployment@1435655998:pull_request`), so a
+deleted and re-created repo with the same name cannot reuse the trust. The
+bootstrap accepts both formats.
+
 That is what `aws_iam_openid_connect_provider` and the two `trust_*` policy
 documents in `infra/bootstrap/main.tf` set up. A pull request gets the
 read-only role, so a PR can never change the live site. Only `main` gets the
