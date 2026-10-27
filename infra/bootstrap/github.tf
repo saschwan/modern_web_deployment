@@ -12,6 +12,12 @@ data "github_repository" "this" {
   full_name = local.repo_full_name
 }
 
+# The owner's numeric ID, needed for the immutable OIDC subject in main.tf.
+# For a repository owned by an organization, use data "github_organization" instead.
+data "github_user" "owner" {
+  username = var.github_owner
+}
+
 locals {
   # Non-secret values for the workflows. They appear under
   # Settings > Secrets and variables > Actions > Variables and are read in

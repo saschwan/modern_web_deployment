@@ -34,8 +34,10 @@ jobs:
 
   deploy:
     needs: test
-    # Skipped until the bootstrap has created the deploy role.
-    if: vars.AWS_DEPLOY_ROLE_ARN != ''
+    # Skipped until the bootstrap has created the deploy role, and on any
+    # branch other than main: the deploy role only trusts main, so a manual
+    # run on a feature branch could never log in to AWS anyway.
+    if: vars.AWS_DEPLOY_ROLE_ARN != '' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     env:
       TF_IN_AUTOMATION: "true"

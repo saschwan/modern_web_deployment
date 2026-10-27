@@ -19,6 +19,18 @@ data "aws_caller_identity" "current" {}
 
 locals {
   repo_full_name = "${var.github_owner}/${var.github_repository}"
+
+  # GitHub puts the repository into the token's `sub` claim in one of two
+  # formats. Newer repositories use "immutable subjects" that include the
+  # numeric IDs, so a renamed or re-created repo cannot inherit the trust:
+  #   legacy:    repo:saschwan/modern_web_deployment:ref:refs/heads/main
+  #   immutable: repo:saschwan@5630718/modern_web_deployment@1435655998:ref:refs/heads/main
+  # Check yours with: gh api repos/OWNER/REPO/actions/oidc/customization/sub
+  # Both are accepted here; the IDs are looked up in github.tf.
+  oidc_subject_prefixes = [
+    "repo:${local.repo_full_name}",
+    "repo:${var.github_owner}@${data.github_user.owner.id}/${var.github_repository}@${data.github_repository.this.repo_id}",
+  ]
 }
 
 # --- 1. Remote state bucket ---------------------------------------------------
@@ -124,7 +136,7 @@ data "aws_iam_policy_document" "trust_pull_requests" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${local.repo_full_name}:pull_request"]
+      values   = [for p in local.oidc_subject_prefixes : "${p}:pull_request"]
     }
   }
 }
@@ -144,7 +156,7 @@ data "aws_iam_policy_document" "trust_main_branch" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${local.repo_full_name}:ref:refs/heads/main"]
+      values   = [for p in local.oidc_subject_prefixes : "${p}:ref:refs/heads/main"]
     }
   }
 }
