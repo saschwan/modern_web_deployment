@@ -129,6 +129,25 @@ gh api repos/saschwan/modern_web_deployment/actions/oidc/customization/sub
 Use the `plan` role name (`modern-web-github-plan`) for failures on pull
 requests, and the `deploy` role for failures on main.
 
+### "Your account must be verified before you can add new CloudFront resources"
+
+New AWS accounts are not allowed to create CloudFront distributions until AWS
+Support verifies them. This is a one-time step per account, and Terraform
+cannot do it for you.
+
+1. Open a case in the [AWS Support Center](https://support.console.aws.amazon.com/support/home#/case/create):
+   **Account and billing**, service **Account**, category **Other account issues**.
+   This is free on the Basic support plan.
+2. Paste the full error message, including the RequestID, and say you want to
+   create a CloudFront distribution for a personal static website.
+3. Once AWS confirms (usually within a day), run **Deploy** again from the
+   Actions tab.
+
+Everything created before the error (bucket, CloudFront function, budget,
+SNS topic) stays in place and is recorded in the state. The next apply only
+creates what is missing. That is Terraform's convergence at work: it always
+moves the real world towards the code, starting from wherever it is.
+
 ### A pull request that changes `infra/bootstrap/` fails its own checks
 
 CI never applies the bootstrap; only you do, locally. So when a PR changes
