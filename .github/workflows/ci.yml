@@ -10,6 +10,7 @@ name: CI
 on:
   pull_request:
     branches: [main]
+  workflow_dispatch: # lets you start CI by hand from the Actions tab
 
 permissions:
   contents: read
