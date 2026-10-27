@@ -69,10 +69,12 @@ jobs:
         if: vars.AWS_PLAN_ROLE_ARN != ''
         working-directory: infra/live
         run: |
+          # pipefail: without it, `| tee` would hide a failing plan and the step would pass.
+          set -o pipefail
           terraform init -input=false \
             -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
             -backend-config="region=${{ vars.AWS_REGION }}"
-          terraform plan -input=false -no-color -out=tfplan | tee plan.txt
+          terraform plan -input=false -no-color -out=tfplan 2>&1 | tee plan.txt
           # Keep the comment short: only the summary of each resource change.
           grep -E '^\s+# |^Plan:|^No changes' plan.txt > summary.txt || true
 
@@ -87,7 +89,7 @@ jobs:
             const body = [
               '### Terraform plan for `infra/live`',
               'This is what will change in AWS when this PR is merged.',
-              '```', summary || 'No changes.', '```',
+              '```', summary || 'No resource changes found in the plan output.', '```',
               '<details><summary>Full plan</summary>', '', '```', full, '```', '</details>',
             ].join('\n');
             await github.rest.issues.createComment({
