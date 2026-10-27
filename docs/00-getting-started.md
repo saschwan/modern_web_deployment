@@ -102,6 +102,64 @@ terraform -chdir=infra/bootstrap destroy   # fails on purpose: the state bucket 
 To remove the bootstrap too, delete the `prevent_destroy` block in
 `infra/bootstrap/main.tf`, empty the bucket, then run the destroy again.
 
+## Troubleshooting
+
+### "Could not assume role with OIDC: Not authorized to perform sts:AssumeRoleWithWebIdentity"
+
+The workflow reached AWS, but the role's trust policy did not match the
+token GitHub sent. Compare the two:
+
+```bash
+# What the role expects
+aws iam get-role --role-name modern-web-github-deploy \
+  --query 'Role.AssumeRolePolicyDocument.Statement[0].Condition'
+
+# How GitHub writes the subject for this repo
+gh api repos/saschwan/modern_web_deployment/actions/oidc/customization/sub
+```
+
+| Cause | Fix |
+| --- | --- |
+| The repo uses **immutable subjects** (`use_immutable_subject: true`, IDs in the subject). | Already handled: the trust policies accept both formats. If you see this on an old bootstrap, re-run `make bootstrap`. |
+| The repo was **renamed, moved or re-created**. The IDs or name changed. | Update `github_owner` / `github_repository` if needed and re-run `make bootstrap`. |
+| A **custom subject template** (`use_default: false`). | Make the `values` in the `trust_*` policy documents in `infra/bootstrap/main.tf` match the template, then re-run `make bootstrap`. |
+| A job uses `environment:`. Its subject then ends in `:environment:NAME`. | Add that subject to the trust policy, or remove `environment:` from the job. |
+| You used `create_github_oidc_provider = false` and the existing provider has no `sts.amazonaws.com` audience. | Add the audience in IAM > Identity providers, or let the bootstrap create the provider. |
+
+Use the `plan` role name (`modern-web-github-plan`) for failures on pull
+requests, and the `deploy` role for failures on main.
+
+### A pull request that changes `infra/bootstrap/` fails its own checks
+
+CI never applies the bootstrap; only you do, locally. So when a PR changes
+the bootstrap (for example the trust policies above), CI still runs against
+the old version and can fail. Because branch protection requires the checks,
+the PR cannot merge either. The way out is to apply the bootstrap from the
+PR branch first:
+
+```bash
+git fetch origin && git switch <pr-branch>
+make bootstrap        # read the plan: it should only touch what the PR changes
+```
+
+Then re-run the failed check on the PR and merge. Afterwards, `git switch main
+&& git pull` so your local copy matches what you applied.
+
+### "startup_failure" with no jobs
+
+GitHub could not start the workflow at all, so the code was never read.
+Open the failed run in the Actions tab for the reason. Typical causes:
+Actions disabled for the repo, or a billing or spending-limit lock on private
+repo minutes. Runs that fail this way cannot be re-run. Use **Run workflow**
+on the CI or Deploy workflow, or push a new commit.
+
+### The plan step is skipped on pull requests
+
+The AWS steps only run once the bootstrap has written the repository
+variables (`AWS_PLAN_ROLE_ARN` and others). Check them under Settings >
+Secrets and variables > Actions > Variables, and re-run `make bootstrap` if
+they are missing.
+
 ## Optional: move the bootstrap state into S3
 
 Once the bucket exists, add this to `infra/bootstrap/versions.tf` inside the
