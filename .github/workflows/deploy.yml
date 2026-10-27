@@ -61,13 +61,27 @@ jobs:
         id: tf
         working-directory: infra/live
         run: |
+          set -o pipefail
           terraform init -input=false \
             -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
             -backend-config="region=${{ vars.AWS_REGION }}"
-          terraform apply -input=false -auto-approve
+          terraform apply -input=false -auto-approve -no-color 2>&1 | tee apply.txt
           echo "bucket=$(terraform output -raw content_bucket)" >> "$GITHUB_OUTPUT"
           echo "cdn_id=$(terraform output -raw cdn_id)"         >> "$GITHUB_OUTPUT"
           echo "url=$(terraform output -raw site_url)"          >> "$GITHUB_OUTPUT"
+
+      # On failure, put the Terraform error on the run's summary page, so you
+      # can read it without digging through the logs.
+      - name: Show Terraform errors
+        if: failure() && steps.tf.outcome == 'failure'
+        working-directory: infra/live
+        run: |
+          {
+            echo "### terraform apply failed"
+            echo '```'
+            grep -A 15 -E '^(Error|│ Error)' apply.txt | head -100 || tail -50 apply.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # Content is uploaded with the AWS CLI rather than Terraform. Terraform
       # manages infrastructure (long-lived things); site files change on every
