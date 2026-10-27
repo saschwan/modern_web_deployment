@@ -1,0 +1,11 @@
+{
+  "name": "modern-web-deployment",
+  "private": true,
+  "description": "Static site tests. Run `npm test` before pushing; CI runs the same command.",
+  "scripts": {
+    "test": "html-validate \"site/**/*.html\" && node --test \"tests/*.test.mjs\""
+  },
+  "devDependencies": {
+    "html-validate": "^9.0.0"
+  }
+}

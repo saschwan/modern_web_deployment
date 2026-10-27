@@ -1,0 +1,25 @@
+# Copy this file to terraform.tfvars (which is gitignored) and adjust.
+# Every value has a default in variables.tf, so an empty file also works.
+
+project_name      = "modern-web"
+aws_region        = "eu-central-1"
+github_owner      = "saschwan"
+github_repository = "modern_web_deployment"
+
+# Set to false if IAM already has an identity provider for token.actions.githubusercontent.com.
+create_github_oidc_provider = true
+
+# Requires GitHub Pro for private repositories.
+enable_branch_protection = true
+
+# Only needed once you want Terraform to register a domain (see infra/live/terraform.tfvars).
+# domain_contact = {
+#   first_name     = "Sebastian"
+#   last_name      = "Example"
+#   email          = "you@example.com"
+#   phone_number   = "+41.791234567"
+#   address_line_1 = "Bahnhofstrasse 1"
+#   city           = "Zurich"
+#   zip_code       = "8001"
+#   country_code   = "CH"
+# }
