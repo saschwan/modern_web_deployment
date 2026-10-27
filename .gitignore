@@ -1,0 +1,16 @@
+# Node
+node_modules/
+
+# Terraform working directories: providers and modules are downloaded here by `terraform init`.
+.terraform/
+
+# Terraform state can contain secrets and must never be committed.
+# The live stack keeps its state in S3; only the bootstrap stack keeps a local file.
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+
+# Values with credentials or personal data (see the *.example files).
+infra/bootstrap/terraform.tfvars
+*.secret.tfvars

@@ -1,0 +1,78 @@
+# -----------------------------------------------------------------------------
+# Runs after every merge to main (and on demand from the Actions tab).
+#   1. test again (main must always be deployable)
+#   2. terraform apply: make AWS match the code
+#   3. upload site/ to S3 and clear the CloudFront cache
+# -----------------------------------------------------------------------------
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+# Never run two deploys at once; a second one waits for the first.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  deploy:
+    needs: test
+    # Skipped until the bootstrap has created the deploy role.
+    if: vars.AWS_DEPLOY_ROLE_ARN != ''
+    runs-on: ubuntu-latest
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_VAR_domain_contact: ${{ secrets.TF_VAR_DOMAIN_CONTACT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.13.4
+          terraform_wrapper: false
+
+      - name: Log in to AWS (deploy role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Terraform apply
+        id: tf
+        working-directory: infra/live
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="region=${{ vars.AWS_REGION }}"
+          terraform apply -input=false -auto-approve
+          echo "bucket=$(terraform output -raw content_bucket)" >> "$GITHUB_OUTPUT"
+          echo "cdn_id=$(terraform output -raw cdn_id)"         >> "$GITHUB_OUTPUT"
+          echo "url=$(terraform output -raw site_url)"          >> "$GITHUB_OUTPUT"
+
+      # Content is uploaded with the AWS CLI rather than Terraform. Terraform
+      # manages infrastructure (long-lived things); site files change on every
+      # commit and can be thousands of objects. See docs/01-terraform-primer.md.
+      - name: Upload site
+        run: aws s3 sync site/ "s3://${{ steps.tf.outputs.bucket }}" --delete
+
+      - name: Clear CDN cache
+        run: aws cloudfront create-invalidation --distribution-id "${{ steps.tf.outputs.cdn_id }}" --paths "/*"
+
+      - name: Summary
+        run: echo "Deployed to ${{ steps.tf.outputs.url }}" >> "$GITHUB_STEP_SUMMARY"

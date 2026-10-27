@@ -1,0 +1,95 @@
+# -----------------------------------------------------------------------------
+# Runs on every pull request. Both jobs are required checks (see
+# infra/bootstrap/github.tf), so a PR cannot merge until they pass.
+#
+#   test       html-validate + node tests for the site
+#   terraform  fmt, validate, and a `plan` that shows what the merge would change
+# -----------------------------------------------------------------------------
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write # lets the job request an OIDC token to log in to AWS
+  pull-requests: write # lets the job comment the plan on the PR
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  terraform:
+    runs-on: ubuntu-latest
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_VAR_domain_contact: ${{ secrets.TF_VAR_DOMAIN_CONTACT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.13.4
+          terraform_wrapper: false
+
+      - name: Format check
+        run: terraform fmt -check -recursive -diff infra
+
+      - name: Validate
+        run: |
+          for dir in infra/live infra/bootstrap; do
+            terraform -chdir=$dir init -backend=false -input=false
+            terraform -chdir=$dir validate
+          done
+
+      # Everything below needs AWS. Until you have run the bootstrap, these
+      # variables do not exist and the steps are skipped (the job still passes).
+      - name: Log in to AWS (read-only plan role)
+        if: vars.AWS_PLAN_ROLE_ARN != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Plan
+        id: plan
+        if: vars.AWS_PLAN_ROLE_ARN != ''
+        working-directory: infra/live
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="region=${{ vars.AWS_REGION }}"
+          terraform plan -input=false -no-color -out=tfplan | tee plan.txt
+          # Keep the comment short: only the summary of each resource change.
+          grep -E '^\s+# |^Plan:|^No changes' plan.txt > summary.txt || true
+
+      - name: Comment plan on the PR
+        if: steps.plan.outcome == 'success'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('infra/live/summary.txt', 'utf8');
+            const full = fs.readFileSync('infra/live/plan.txt', 'utf8').slice(-60000);
+            const body = [
+              '### Terraform plan for `infra/live`',
+              'This is what will change in AWS when this PR is merged.',
+              '```', summary || 'No changes.', '```',
+              '<details><summary>Full plan</summary>', '', '```', full, '```', '</details>',
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: context.issue.number, body,
+            });
