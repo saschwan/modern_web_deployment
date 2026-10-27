@@ -41,7 +41,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TF_IN_AUTOMATION: "true"
-      TF_VAR_domain_contact: ${{ secrets.TF_VAR_DOMAIN_CONTACT }}
+      # Terraform parses TF_VAR_ values of complex types as HCL, so an unset secret
+      # (empty string) is an invalid object. Fall back to `null` instead.
+      TF_VAR_domain_contact: ${{ secrets.TF_VAR_DOMAIN_CONTACT || 'null' }}
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
